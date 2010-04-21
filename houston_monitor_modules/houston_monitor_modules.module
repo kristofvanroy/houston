@@ -1,0 +1,315 @@
+<?php
+
+define('HOUSTON_PING_METHOD', 'houston_connect.ping_modules');
+
+include_once('houston_monitor_modules.features.inc');
+
+/**
+ * Implementation of hook_menu().
+ */
+function houston_monitor_modules_menu() {
+  $items = array();
+
+  $items['node/%webapp/modules'] = array(
+    'title' => 'Modules',
+    'page callback' => 'houston_monitor_modules_webapp',
+    'page arguments' => array(1),
+    'access arguments' => array('view monitor modules'),
+    'file' => 'houston_monitor_modules.pages.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 9,
+  );
+
+  $items['admin/houston/monitor/modules'] = array(
+    'title' => 'Modules',
+    'page callback' => 'houston_monitor_modules_list',
+    'access arguments' => array('administer monitor modules'),
+    'file' => 'houston_monitor_modules.pages.inc',
+    'menu_name' => 'admin',
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/modules/%module'] = array(
+    'title' => 'Webapps per module',
+    'page callback' => 'houston_monitor_modules_module',
+    'page arguments' => array(4),
+    'access arguments' => array('administer monitor modules'),
+    'file' => 'houston_monitor_modules.pages.inc',
+    'menu_name' => 'admin',
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/modules/%webapp/ping'] = array(
+    'title' => 'Houston Ping modules',
+    'page callback' => 'houston_monitor_modules_ping',
+    'page arguments' => array(4),
+    'access arguments' => array('administer monitor modules'),
+    'type' => MENU_CALLBACK
+  );
+
+  $items['admin/houston/monitor/modules/cron'] = array(
+    'title' => 'Houston Ping modules',
+    'page callback' => 'houston_monitor_modules_cron',
+    'access arguments' => array('administer monitor modules'),
+    'type' => MENU_CALLBACK
+  );
+
+  return $items;
+}
+
+function module_load($name) {
+  return db_fetch_array(db_query("SELECT * FROM {houston_monitor_modules} WHERE name = '%s'", $name));
+}
+
+/*
+ * Implementation of hook_perm
+ */
+function houston_monitor_modules_perm() {
+  return array('view monitor modules', 'administer monitor modules');
+}
+
+/*
+ * Implementation of hook_blocks
+ */
+function houston_monitor_modules_block($op = 'list', $delta = 0, $edit = array()) {
+  if ($op == 'list') {
+    $blocks['monitor-modules-stats'] = array('info' => t('Monitor Modules Stats'));
+
+    return $blocks;
+  }
+  elseif ($op == 'view') {
+    switch ($delta) {
+      case 'monitor-modules-stats':
+        $block = array(
+          'subject' => t('Module statistics'),
+          'content' => houston_monitor_modules_display_block_stats()
+        );
+        break;
+    }
+
+    return $block;
+  }
+}
+
+function houston_monitor_modules_display_block_stats() {
+  $nid = arg(1);
+  $sql = "SELECT hmmw.status, COUNT(*) AS count
+          FROM {houston_monitor_modules_webapp} hmmw
+          JOIN {houston_monitor_modules} hmm ON hmm.mid = hmmw.mid
+          WHERE hmmw.wid = ". check_plain($nid) ."
+          GROUP BY status";
+
+  $result = db_query($sql);
+
+  $rows = array();
+
+  while ($row = db_fetch_object($result)) {
+    switch ($row->status) {
+      case 0:
+        $status[0] = array('count' => $row->count, 'title' => t('Out of date'));
+        break;
+      case 1:
+        $status[1] = array('count' => $row->count, 'title' => t('Up to date'));
+        break;
+      case 2:
+        $status[2] = array('count' => $row->count, 'title' => t('Newer version available'));
+        break;
+    }
+  }
+
+  $output = theme('table', array(), $status);
+
+  return $output;
+}
+
+function houston_monitor_modules_ping_method(&$methods) {
+  $methods[] = array(
+    'title' => t('modules'),
+    'url' => 'admin/houston/monitor/modules/%webapp/ping',
+  );
+
+  return $methods;
+}
+
+function houston_monitor_modules_cron() {
+  global $base_url;
+  module_load_include('module', 'update');
+  module_load_include('inc', 'update', 'update.fetch');
+
+  $available = array();
+  $data = array();
+  $site_key = md5($base_url . drupal_get_private_key());
+
+  $result = db_query("SELECT * FROM {houston_monitor_modules}");
+
+  while ($module = db_fetch_object($result)) {
+    $projects[$module->name]['name'] = $module->name;
+    $projects[$module->name]['info']['name'] = $module->title;
+    $projects[$module->name]['info']['version'] = $module->lastest_version;
+  }
+
+  $max_fetch_attempts = variable_get('update_max_fetch_attempts', UPDATE_MAX_FETCH_ATTEMPTS);
+
+  foreach ($projects as $key => $project) {
+    $url = _update_build_fetch_url($project, $site_key);
+
+    $fetch_url_base = _update_get_fetch_url_base($project);
+    if (empty($fail[$fetch_url_base]) || count($fail[$fetch_url_base]) < $max_fetch_attempts) {
+      $xml = drupal_http_request($url);
+      if (isset($xml->data)) {
+        $data[] = $xml->data;
+      }
+      else {
+        // Connection likely broken; prepare to give up.
+        $fail[$fetch_url_base][$key] = 1;
+      }
+    }
+    else {
+      // Didn't bother trying to fetch.
+      $fail[$fetch_url_base][$key] = 1;
+    }
+  }
+
+  if ($data) {
+    $parser = new update_xml_parser;
+    $modules = $parser->parse($data);
+
+    if (is_array($modules) && count($modules) > 0) {
+      foreach ($modules as $key => &$module) {
+        $recommended_major = $module['recommended_major'];
+        $i = 0;
+        foreach ($module['releases'] as $version => $release) {
+          $i++;
+          if ($i === 1) {
+            $module['latest_version'] = $version;
+          }
+
+          if ($release['version_major'] == $module['recommended_major']) {
+            $module['recommended'] = $version;
+            $module['download_link'] = $release['download_link'];
+            unset($module['releases']);
+            break;
+          }
+        }
+
+        $sql = "UPDATE {houston_monitor_modules} SET
+                  latest_version = '%s',
+                  recommended_version = '%s',
+                  download_link = '%s'
+                WHERE name = '%s'";
+
+        db_query($sql,
+          $module['latest_version'],
+          $module['recommended'],
+          $module['download_link'],
+          $key
+        );
+      }
+
+      // Update webapp status
+      db_query("UPDATE houston_monitor_modules_webapp w
+                 JOIN houston_monitor_modules m ON m.mid = w.mid
+                 SET w.status = IF (m.latest_version = '', 1, IF (w.installed_version != m.recommended_version, 0, IF (m.recommended_version != m.latest_version, 2, 1)))");
+    }
+
+    $out = 'ok';
+  }
+  else {
+    $out ='problem';
+  }
+
+  return $out;
+}
+
+function houston_monitor_modules_ping($webapp) {
+  $result = houston_ping_ping($webapp->nid, HOUSTON_PING_METHOD);
+
+  if ($result) {
+    houston_monitor_modules_save($result);
+    drupal_set_message(t('The modules were fetched successfully for <em>%webapp</em>. !url', array('%webapp' => $webapp->title, '!url' => l('Check em out!', 'node/'. $webapp->nid .'/modules'))));
+  }
+  else {
+    drupal_set_message(t('Something went wrong trying to fetch the modules for <em>%webapp</em>.', array('%webapp' => $webapp->title)), 'error');
+  }
+
+  drupal_goto('admin/houston/ping/webapps');
+}
+
+function houston_monitor_modules_save($result) {
+  if (is_array($result['modules']) && count($result['modules']) > 0) {
+
+    // Delete old entries
+    db_query("DELETE FROM {houston_monitor_modules_webapp} WHERE wid = %d", $result['wid']);
+
+    foreach ($result['modules'] as $module) {
+
+      if (is_array($module['also'])) {
+        $module['latest_version'] = array_shift($module['also']);
+      }
+
+      if (empty($module['latest_version'])) {
+        // Custom modules
+        $status = 1;
+      }
+      elseif ($module['existing_version'] != $module['recommended']) {
+        // Out of date
+        $status = 0;
+      }
+      elseif ($module['recommended'] != $module['latest_version']) {
+        // Newer version available
+        $status = 2;
+      }
+      else {
+        // Up to date
+        $status = 1;
+      }
+
+      $download_link = $module['releases'][$module['recommended']]['download_link'];
+
+      // Fetch module
+      $module_load = module_load($module['name']);
+      $module['mid'] = $module_load['mid'];
+
+      if (!$module_load) {
+        $sql = "INSERT INTO {houston_monitor_modules} SET
+          name = '%s',
+          title = '%s',
+          description = '%s',
+          project_type = '%s',
+          latest_version = '%s',
+          recommended_version = '%s',
+          download_link = '%s',
+          project_link = '%s',
+          package = '%s'";
+
+        db_query($sql,
+          $module['name'],
+          $module['info']['name'],
+          $module['info']['description'],
+          $module['project_type'],
+          $module['latest_version'],
+          $module['recommended'],
+          $download_link,
+          $module['link'],
+          $module['info']['package']
+        );
+
+        $module['mid'] = db_last_insert_id('houston_monitor_modules', 'mid');
+      }
+
+      // Insert new entries
+      $sql = "INSERT IGNORE INTO {houston_monitor_modules_webapp} SET
+          wid = %d,
+          mid = %d,
+          installed_version = '%s',
+          status = '%s'";
+
+      db_query($sql,
+        $result['wid'],
+        $module['mid'],
+        $module['existing_version'],
+        $status
+      );
+    }
+  }
+}

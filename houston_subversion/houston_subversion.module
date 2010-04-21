@@ -1,0 +1,163 @@
+<?php
+
+include_once('houston_subversion.features.inc');
+
+/**
+* Implementation of hook_init().
+*/
+function houston_subversion_init() {
+  drupal_add_css(drupal_get_path('module', 'houston_subversion') .'/houston_subversion.css');
+  
+  $map = context_condition_map();
+  $plugin = context_get_plugin('condition', 'commitlog');
+
+  if (arg(0) == 'node' && is_numeric(arg(1)) && !empty($map['commitlog']) && !empty($plugin) && arg(2) == 'commitlog') {
+    $node = node_load(arg(1));
+    
+    if ($node && $node->type == 'webapp' && is_numeric($node->field_webapp_repo[0]['value'])) {
+      $plugin->execute(1);
+    }
+  }
+}
+
+/**
+ * Implementation of hook_menu
+ */
+ 
+function houston_subversion_menu() {
+  $items['node/%houston_subversion_node/commitlog'] = array(
+    'title' => 'Commitlog',
+    'page callback' => 'houston_subversion_commitlog',
+    'page arguments' => array(1),
+    'access callback' => 'node_access',
+    'access arguments' => array('view', 1),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 4,
+  );
+  return $items;
+}
+
+function houston_subversion_node_load($nid) {
+  $node = node_load($nid);
+
+  if ($node && $node->type == 'webapp' && is_numeric($node->field_webapp_repo[0]['value']) && spaces_access_feature('view', 'houston_webapp') && spaces_access_feature('view', 'houston_subversion')) {
+    return $node;
+  }
+  return FALSE;
+}
+
+
+
+function houston_subversion_commitlog($node) {
+  $repo_id = $node->field_webapp_repo[0]['value'];
+  
+  drupal_set_title(t('Commits for @title', array('@title' => $node->title)));
+
+  return commitlog_operations_page(array('repo_ids' => array($repo_id)));
+
+}
+
+/**
+ * Implementation of hook_block
+ */
+
+function houston_subversion_block ($op = 'list', $delta = 0, $edit = array()) {
+  switch ($op) {
+    case 'list':
+      $blocks['svn_info'] = array(
+        'info'       => t('Subversion information'),
+      );
+      return $blocks;
+    case 'view': default:
+      switch ($delta) {
+        case 'svn_info':
+          $block['subject'] = houston_subversion_block_info('subject');
+          $block['content'] = houston_subversion_block_info();
+          break;
+      }
+      return $block;
+  }
+}
+
+function houston_subversion_block_info($type = 'content') {
+  $node = node_load(arg(1));
+  if ($node && $node->type == 'webapp' && is_numeric($node->field_webapp_repo[0]['value'])) {
+    $repo = versioncontrol_get_repository($node->field_webapp_repo[0]['value']);
+    
+    if ($type == 'subject') {
+      return t('Subversion information for @title', array('@title' => $node->title));    
+    } 
+    else {
+      $content = array();
+      $content[] = '<h3>Commitlog</h3>';
+      $content[] = houston_subversion_latetst_commits($node, $repo);
+      $content[] = '<p>'. l(t('Browse commitlog'), 'node/'.$node->nid.'/commitlog').'</p>';
+      $content[] = '<br/><h3>Location</h3>';
+      $content[] = '<p><em>'. t('svn co @repo', array ('@repo' => $repo['root'])) .'</em></p>';
+
+      return implode("\n", $content);
+    }
+  }
+}
+
+
+function houston_subversion_latetst_commits($node, $repo) {
+  $operations = versioncontrol_get_operations(array('repo_ids' => array($repo['repo_id'])), array('query_type' => 'range', 'count' => 5, 'from' => 0));
+  
+  $log = array();
+  foreach ($operations as $operation) {
+    $string = '<div class="grouped clear-block">';
+
+    $string .= '<div class="grouped-left"><div class="username">'. $operation['username'] .'</div></div>';
+    
+    $string .= '<div class="grouped-right">';
+    $string .= '<div class="revisionstamp">r'. $operation['revision'] .' '. t('on') .' '. commitlog_operation_date($operation) .'</div>';
+    if ($operation['message']) {
+      $string .= '<div class="commit-message">'. $operation['message'] .'</div>';
+    }
+    $string .= '</div></div>';
+    
+    $log[] = $string;
+  }
+  
+  return theme('item_list', $log);
+}
+
+
+
+function houston_subversion_context_plugins() {
+  $plugins = array();
+  $plugins['houston_subversion_context_condition_commitlog'] = array(
+    'handler' => array(
+      'path' => drupal_get_path('module', 'houston_subversion') .'/plugins',
+      'file' => 'houston_subversion_context_condition_commitlog.inc',
+      'class' => 'houston_subversion_context_condition_commitlog',
+      'parent' => 'context_condition',
+    ),
+  );
+  return $plugins;
+}
+
+
+function houston_subversion_context_registry() {
+  return array(
+    'conditions' => array(
+      'commitlog' => array(
+        'title' => t('Subversion'),
+        'plugin' => 'houston_subversion_context_condition_commitlog',
+      ),
+    ),
+  );
+}
+
+function houston_subversion_context_default_contexts_alter($contexts) {
+  $contexts['spaces-feature-webapp']->block['houston_subversion_svn_info'] = array(
+    'module' => 'houston_subversion',
+    'delta' => 'svn_info',
+    'weight' => 20,
+    'region' => 'right',
+    'status' => 0,
+    'label' => 'Subversion information',
+    'type' => 'context_ui'
+  );
+}

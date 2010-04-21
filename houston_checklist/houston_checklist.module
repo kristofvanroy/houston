@@ -1,0 +1,243 @@
+<?php
+
+include_once('houston_checklist.features.inc');
+
+/**
+ * Implementation of hook_menu.
+ */
+function houston_checklist_menu() {
+
+  $items['node/%houston_checklist_node/checklist'] = array(
+    'title' => 'Checklist',
+    'page callback' => 'houston_checklist_node_page',
+    'page arguments' => array(1),
+    'access callback' => 'node_access',
+    'access arguments' => array('view', 1),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 3,
+    'file' => 'houston_checklist.pages.inc'
+  );
+
+  $items['houston_checklist.check_item.json'] = array(
+    'title' => 'Check a checklist item through AJAX.',
+    'page callback' => 'houston_checklist_check_item',
+    'access arguments' => array('update checklist'),
+    'type' => MENU_CALLBACK,
+    'file' => 'houston_checklist.js.inc'
+  );
+
+  $items['houston_checklist.save_progress.json'] = array(
+    'title' => 'Save the node progress through AJAX.',
+    'page callback' => 'houston_checklist_save_progress',
+    'access arguments' => array('update checklist'),
+    'type' => MENU_CALLBACK,
+    'file' => 'houston_checklist.js.inc'
+  );
+  return $items;
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function houston_checklist_perm() {
+  return array('update checklist');
+}
+
+function houston_checklist_node_load($nid) {
+  $node = node_load($nid);
+
+  if ($node && $node->type == 'webapp' && spaces_access_feature('view', 'houston_webapp') && spaces_access_feature('view', 'houston_checklist')) {
+    return $node;
+  }
+  return FALSE;
+}
+
+/**
+ * Implementation of hook_perm().
+ */
+function houston_checklist_block($op = 'list', $delta = 0, $edit = array()) {
+  switch ($op) {
+    case 'list':
+      $blocks[0] = array('info' => t('Checklist node progress'));
+      $blocks[1] = array('info' => t('Webapp checklist progress'));
+      return $blocks;
+    case 'view':
+      module_load_include('inc', 'houston_checklist', 'houston_checklist.blocks');
+      switch ($delta) {
+        case 0:
+          $block = array(
+            'subject' => t('Project checklist progress'),
+            'content' => houston_webapp_checklist_progress_block());
+          break;
+        case 1:
+          $block = array(
+            'subject' => t('Webapp checklist progress'),
+            'content' => houston_webapp_checklist_progress_block());
+          break;
+      }
+      return $block;
+  }
+}
+
+/**
+ * Implements hook_nodeapi.
+ */
+function houston_checklist_nodeapi(&$node, $op, $teaser, $page) {
+
+  switch ($node->type) {
+    case 'webapp':
+      switch ($op) {
+        case 'insert':
+          $checklist_item_objects = db_query("SELECT nid FROM {node} WHERE type = 'checklist_item'");
+          while ($checklist_item = db_fetch_object($checklist_item_objects)) {
+            db_query("INSERT INTO {checklist} (dprid, clid, checked) VALUES ('%s', '%s', 0)", $node->nid, $checklist_item->nid);
+          }
+          break;
+
+        case 'delete':
+          db_query("DELETE FROM {checklist} WHERE dprid = '%s'", $node->nid);
+          break;
+      }
+   break;
+
+  case 'checklist_item':
+    switch ($op) {
+      case 'insert':
+      case 'update':
+        if (sizeof($node->projects['add']) > 0) {
+
+          foreach ($node->projects['add'] as $project_nid) {
+            if ($project_nid != 0) {
+
+              $checklist->dprid = $project_nid;
+              $checklist->clid  = $node->nid;
+
+              if ($op == 'update') {
+                $fields = array('dprid', 'clid');
+              }
+              else {
+                $fields = array();
+              }
+
+              drupal_write_record('checklist', $checklist, $fields);
+            }
+          }
+        }
+      break;
+
+			case 'delete':
+				db_query("DELETE FROM {checklist} WHERE clid = %d", $node->nid);
+			break;
+    }
+  break;
+  }
+}
+
+/**
+ * Implementation of hook_form_alter().
+ */
+function houston_checklist_form_alter(&$form, $form_state, $form_id) {
+  if ($form_id == 'webapp_node_form') {
+    if (isset($form['field_dpr_checklist_progress'])) {
+      unset($form['field_dpr_checklist_progress']);
+    }
+  }
+
+  if ($form_id == 'checklist_item_node_form') {
+    $form['projects'] = array(
+      '#type' => 'fieldset',
+      '#title' => t('Add this checklist item to existing checklist projects'),
+      '#collapsible' => TRUE,
+      '#collapsed' => TRUE,
+      '#tree' => TRUE,
+    );
+
+    if (arg(0) == 'node' && is_numeric(arg(1)) && arg(2) == 'edit') {
+      $result = db_query("SELECT dprid FROM {checklist} WHERE clid = %d", arg(1));
+
+      $default_values = array();
+      while ($data = db_fetch_array($result)) {
+        $default_values[] = $data['dprid'];
+      }
+
+    }
+    $result = db_query("SELECT nid, title FROM {node} WHERE type = 'webapp' AND status = 1");
+
+    $webapps = array();
+
+    while ($data = db_fetch_array($result)) {
+      $webapps[$data['nid']] = $data['title'];
+    }
+
+    $form['projects']['add'] = array(
+      '#type' => 'checkboxes',
+      '#options' => $webapps,
+    );
+
+    if ($default_values) {
+      $form['projects']['add']['#default_value'] = $default_values;
+    }
+  }
+}
+
+
+/**
+ * Implementation of hook_theme().
+ */
+function houston_checklist_theme() {
+  return array(
+    'checklist' => array(
+      'arguments' => array(
+        'node_id' => NULL,
+        'node_type' => NULL,
+        'checklist' => NULL,
+      ),
+      'template' => 'checklist',
+    ),
+  );
+}
+
+
+function houston_checklist_context_plugins() {
+  $plugins = array();
+  $plugins['houston_checklist_context_condition_checklist'] = array(
+    'handler' => array(
+      'path' => drupal_get_path('module', 'houston_checklist') .'/plugins',
+      'file' => 'houston_checklist_context_condition_checklist.inc',
+      'class' => 'houston_checklist_context_condition_checklist',
+      'parent' => 'context_condition',
+    ),
+  );
+  return $plugins;
+}
+
+
+function houston_checklist_context_registry() {
+  return array(
+    'conditions' => array(
+      'checklist' => array(
+        'title' => t('checklist'),
+        'plugin' => 'houston_checklist_context_condition_checklist',
+      ),
+    ),
+  );
+}
+
+/**
+* Implementation of hook_init().
+*/
+function houston_checklist_init() {
+  drupal_add_css(drupal_get_path('module', 'houston_checklist') .'/css/houston_checklist.css');
+
+
+  $map = context_condition_map();
+  $plugin = context_get_plugin('condition', 'checklist');
+
+  if (arg(0) == 'node' && is_numeric(arg(1)) && !empty($map['checklist']) && !empty($plugin) && arg(2) == 'checklist') {
+    $node = node_load(arg(1));
+
+    if ($node && $node->type == 'webapp') {
+      $plugin->execute(1);
+    }
+  }
+}

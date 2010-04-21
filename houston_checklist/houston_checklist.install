@@ -1,0 +1,49 @@
+<?php
+/**
+ * Implementation of hook_install
+ */
+function houston_checklist_install() {
+  //create tables
+  drupal_install_schema('houston_checklist');
+}
+
+/**
+ * Implementation of hook_uninstall
+ */
+function houston_checklist_uninstall() {
+  //drop tables
+  drupal_uninstall_schema('houston_checklist');
+}
+
+/**
+ * Implementation of hook_schema
+ */
+function houston_checklist_schema() {
+  $schema['checklist'] = array(
+    'description' => t('Stores information about the checklist for drupal projects.'),
+    'fields' => array(
+      'dprid' => array(
+        'description' => t('The drupal project id.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'clid' => array(
+        'description' => t('The checklist item id.'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'checked' => array(
+        'description' => t('Is this item finished for this project?'),
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('dprid', 'clid'),
+  );
+
+  return $schema;
+}

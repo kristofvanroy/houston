@@ -1,0 +1,158 @@
+<?php
+
+include_once('houston_ping.features.inc');
+
+/*
+ * Implementation of hook_menu
+ */
+function houston_ping_menu() {
+  $items['admin/houston'] = array(
+    'title' => 'Houston',
+    'page callback' => 'houston_ping_dashboard',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['admin/houston/dashboard'] = array(
+    'title' => 'Dashboard',
+    'page callback' => 'houston_ping_dashboard',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+
+  $items['admin/houston/ping'] = array(
+    'title' => 'Ping',
+    'page callback' => 'houston_ping_webapps',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['admin/houston/monitor'] = array(
+    'title' => 'Monitor',
+    'page callback' => 'houston_ping_monitor',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_LOCAL_TASK,
+  );
+
+  $items['admin/houston/monitor/dashboard'] = array(
+    'title' => 'Dashboard',
+    'page callback' => 'houston_ping_monitor',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+
+  $items['admin/houston/ping/webapps'] = array(
+    'title' => 'Webapps',
+    'page callback' => 'houston_ping_webapps',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+    'weight' => 0,
+  );
+
+  $items['admin/houston/ping/log'] = array(
+    'title' => 'Log',
+    'page callback' => 'houston_ping_log',
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 1,
+  );
+
+  $items['admin/houston/ping/webapps/%webapp/edit'] = array(
+    'title' => 'Edit Webapp',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_ping_webapps_edit', 4),
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_CALLBACK,
+  );
+  $items['admin/houston/ping/webapps/%webapp/delete'] = array(
+    'title' => 'Delete Webapp url',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_ping_webapps_delete', 4),
+    'file' => 'houston_ping.admin.inc',
+    'access arguments' => array('administer houston ping'),
+    'type' => MENU_CALLBACK,
+  );
+
+  return $items;
+}
+
+/*
+ * Implementation of hook_perm
+ */
+function houston_ping_perm() {
+  return array('administer houston ping');
+}
+
+/*
+ * Execute xmlrpc call to Houston Connect module
+ */
+function houston_ping_ping($wid, $method, $params = FALSE) {
+  $ping_data = houston_ping_data($wid);
+
+  if ($ping_data->url && $method && $ping_data->key) {
+    $pid = houston_ping_start($wid, $method);
+
+    if ($params) {
+      $result = xmlrpc($ping_data->url, $method, $ping_data->key, $params);
+    }
+    else {
+      $result = xmlrpc($ping_data->url, $method, $ping_data->key);
+    }
+
+    $result['wid'] = $wid;
+    $result['pid'] = $pid;
+
+    houston_ping_end($result['pid']);
+
+    if (xmlrpc_error()) {
+      watchdog('Houston Ping', 'Error %errorno : %errormsg', array('%errorno' => xmlrpc_errno(), '%errormsg' => xmlrpc_error_msg()));
+    }
+    else {
+      watchdog('Houston Ping', t('Successfully sent ping @method to @url', array('@method' => $method, '@url' => check_url($url))));
+      return $result;
+    }
+  }
+  else {
+    watchdog('Houston Ping', t('Failed to send ping @method to @url', array('@method' => $method, '@url' => check_url($url))));
+  }
+
+  return FALSE;
+}
+
+/*
+ * Fetch xmlrpc url
+ */
+function houston_ping_data($wid) {
+  $webapp = db_fetch_object(db_query("SELECT url, `key` FROM {houston_ping_webapp} WHERE wid = %d AND active = 1", $wid));
+
+  if ($webapp) {
+    $webapp->url .= '/xmlrpc.php';
+    return $webapp;
+  }
+
+  return FALSE;
+}
+
+/*
+ * Start ping
+ */
+function houston_ping_start($wid, $method) {
+  db_query("INSERT INTO {houston_ping_log} SET wid = %d, method = '%s', date_start = %d", $wid, $method, time());
+
+  return db_last_insert_id('houston_ping_log', 'pid');
+}
+
+/*
+ * End ping
+ */
+function houston_ping_end($pid) {
+  db_query("UPDATE {houston_ping_log} SET date_end = %d WHERE pid = %d", time(), $pid);
+}

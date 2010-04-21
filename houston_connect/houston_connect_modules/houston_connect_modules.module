@@ -1,0 +1,42 @@
+<?php
+
+/**
+ * Implementation of hook_xmlrpc
+ */
+function houston_connect_modules_xmlrpc() {
+  return array(   
+    array(
+      'houston_connect.ping_modules',
+      'houston_connect_modules_ping_modules',
+      array('struct', 'string'),
+      t('Handling houston modules ping request')
+    ),
+  );
+}
+
+/*
+ * Fetch installed modules
+ */
+function houston_connect_modules_ping_modules($ping_key) {
+  if (houston_connect_valid_key($ping_key) == FALSE) {
+    return FALSE;
+  }
+  
+  module_load_include('module', 'update', 'update');
+
+  if ($available = update_get_available(TRUE)) {
+    $data['modules'] = update_calculate_project_data($available);
+  }
+    
+  return $data;
+}
+
+function houston_connect_valid_key($ping_key) {
+  $connect_key = variable_get('houston_connect_api_key', '');
+  
+  if ($connect_key && $ping_key == $connect_key) {
+    return TRUE;
+  }
+  
+  return FALSE;
+}

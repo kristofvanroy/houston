@@ -1,0 +1,19 @@
+/* Menu */
+#features-menu li a.icon-checklists span.icon { background:url(images/checklist-icon.png) no-repeat; }
+span.feature-houston_checklist { background:url(images/checklist-icon-small.png) no-repeat !important; }
+
+/* Checklist page*/
+.checklist-item-body{font-size:80%; margin-left:17px;}
+.checklist_item {padding:6px; background-color:#ffece8;}
+.checklist_item.checked{background-color:#f2ffe8;}
+
+
+/* Progress Block */
+.checklist-progress-back {width: 100%; padding:3px;}
+.checklist-progress-bar {background:url(/misc/progress.gif); width:0px;}
+.check-list-progress-indecations {margin-left:4px;}
+.checklist-progress-back, .checklist-progress-bar  {-moz-border-radius: 12px; -webkit-border-radius: 12px; border-radius: 12px; }
+
+/* Indicator */
+#check-list-progress-indicator, .checklist-progress-back{background-color:#0a4a5c;}
+#check-list-progress-indicator {margin-left: 12px; padding:5px; color:#fff;}

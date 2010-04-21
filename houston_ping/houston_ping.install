@@ -1,0 +1,111 @@
+<?php
+
+/*
+ * @TODO:
+ * Finish up: Enable and disable hooks
+ */
+
+/**
+ * Implementation of hook_install().
+ */
+function houston_ping_install() {
+  drupal_install_schema('houston_ping');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function houston_ping_uninstall() {
+  drupal_uninstall_schema('houston_ping');
+}
+
+/**
+ * Implementation of hook_enable().
+ */
+function houston_ping_enable() {
+// @TODO
+}
+
+/**
+ * Implementation of hook_disable().
+ */
+function houston_ping_disable() {
+// @TODO
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function houston_ping_schema() {
+  $schema = array();
+
+  $schema['houston_ping_log'] = array(
+    'description' => t('This table holds all ping request dates for later comparison'),
+    'fields' => array(
+      'pid' => array(
+        'description' => t('Primary key of this table'),
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'wid' => array(
+        'description' => t('Webapp identifier'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'method' => array(
+        'description' => t('The ping method'),
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+      ),
+      'date_start' => array(
+        'description' => t('Integer datefield'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'date_end' => array(
+        'description' => t('Integer datefield'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('pid'),
+  );
+
+  $schema['houston_ping_webapp'] = array(
+    'description' => t('This table holds all webapp urls'),
+    'fields' => array(
+      'wid' => array(
+        'description' => t('Webapp id'),
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'url' => array(
+        'description' => t('Site url'),
+        'type' => 'varchar',
+        'length' => '255',
+        'not null' => TRUE,
+      ),
+      'key' => array(
+        'description' => t('API key'),
+        'type' => 'varchar',
+        'length' => '32',
+        'not null' => TRUE,
+      ),
+      'active' => array(
+        'description' => t('Status of the webapp'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+    ),
+    'primary key' => array('wid'),
+  );
+  return $schema;
+}

@@ -1,0 +1,56 @@
+<?php
+
+/**
+ * Implementation of hook_xmlrpc().
+ */
+function houston_connect_watchdog_xmlrpc() {
+  return array(
+    array(
+      'houston_connect.ping_watchdog',
+      'houston_connect_watchdog_ping_watchdog',
+      array('struct', 'string', 'struct'),
+      t('Handling houston watchdog ping request')
+    ),
+  );
+}
+
+function houston_connect_watchdog_ping_watchdog($ping_key, $params) {
+  if (houston_connect_valid_key($ping_key) == FALSE) {
+    return FALSE;
+  }
+
+  $fetched     = 0;
+  $data['running'] = FALSE;
+
+  // Get amount of rows
+  $sql = "SELECT COUNT(*) FROM {watchdog} w WHERE wid > %d";
+  $count = db_result(db_query($sql, $params['last_wid']));
+
+  $sql = "SELECT w.wid, w.uid, w.severity, w.type, w.timestamp, w.message, w.variables, w.link, w.location, w.referer, w.hostname, w.timestamp
+          FROM {watchdog} w
+          WHERE wid > %d
+          ORDER BY w.wid ASC
+          LIMIT %d";
+
+  // Get first batch of results
+  $result = db_query($sql, $params['last_wid'], $params['batch_size']);
+  $last_wid = 0;
+
+  while ($dblog = db_fetch_object($result)) {
+    $variables = unserialize($dblog->variables);
+
+    if ($variables !== FALSE) {
+      $dblog->message = t($dblog->message, $variables);
+    }
+    unset($dblog->variables);
+    $data['watchdog'][] = $dblog;
+    $last_wid = $dblog->wid;
+    $fetched++;
+  }
+
+  if ($fetched < $count) {
+    $data['running'] = TRUE;
+  }
+
+  return $data;
+}

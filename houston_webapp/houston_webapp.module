@@ -1,0 +1,14 @@
+<?php
+
+include_once('houston_webapp.features.inc');
+
+/**
+* Implementation of hook_init().
+*/
+function houston_webapp_init() {
+  drupal_add_css(drupal_get_path('module', 'houston_webapp') .'/houston_webapp.css');
+}
+
+function webapp_load($nid) {
+  return db_fetch_object(db_query("SELECT * FROM {node} WHERE type = 'webapp' AND nid = %d", array($nid)));
+}

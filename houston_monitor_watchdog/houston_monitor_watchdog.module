@@ -1,0 +1,315 @@
+<?php
+
+include_once('houston_monitor_watchdog.features.inc');
+
+/**
+ * Implementation of hook_menu().
+ */
+function houston_monitor_watchdog_menu() {
+  $items = array();
+
+  $items['node/%webapp/watchdog'] = array(
+    'title' => 'Watchdog',
+    'page callback' => 'houston_monitor_watchdog_webapp_watchdog',
+    'page arguments' => array(1),
+    'access arguments' => array('view monitor watchdog'),
+    'file' => 'houston_monitor_watchdog.pages.inc',
+    'type' => MENU_LOCAL_TASK,
+    'weight' => 10,
+  );
+
+  $items['node/%webapp/watchdog/triggers'] = array(
+    'title' => 'Triggers',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_monitor_watchdog_webapp_triggers_form', 1),
+    'access arguments' => array('view monitor watchdog'),
+    'file' => 'houston_monitor_watchdog.pages.inc',
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['node/%webapp/watchdog/statistics'] = array(
+    'title' => 'Statistics',
+    'page callback' => 'houston_monitor_watchdog_webapp_statistics',
+    'page arguments' => array(1),
+    'access arguments' => array('view monitor watchdog'),
+    'file' => 'houston_monitor_watchdog.pages.inc',
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['node/%webapp/watchdog/filter/%'] = array(
+    'title' => 'Watchdog',
+    'page callback' => 'houston_monitor_watchdog_webapp_watchdog',
+    'page arguments' => array(1, 4),
+    'access arguments' => array('view monitor watchdog'),
+    'file' => 'houston_monitor_watchdog.pages.inc',
+    'type' => MENU_CALLBACK
+  );
+
+  $items['admin/houston/monitor/watchdog/%webapp/ping'] = array(
+    'title' => 'Module list',
+    'page callback' => 'houston_monitor_watchdog_ping',
+    'page arguments' => array(4),
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_CALLBACK
+  );
+
+  $items['admin/houston/monitor/watchdog'] = array(
+    'title' => 'Watchdog',
+    'description' => t('Watchdog settings'),
+    'page callback' => 'houston_monitor_watchdog_dashboard',
+    'file' => 'houston_monitor_watchdog.admin.inc',
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/watchdog/triggers/add'] = array(
+    'title' => 'Add watchdog trigger',
+    'description' => t('Add watchdog trigger'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_monitor_watchdog_triggers_form'),
+    'file' => 'houston_monitor_watchdog.admin.inc',
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/watchdog/triggers/%trigger/delete'] = array(
+    'title' => 'Add watchdog trigger',
+    'description' => t('Add watchdog trigger'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_monitor_watchdog_triggers_delete_form', 5),
+    'file' => 'houston_monitor_watchdog.admin.inc',
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/watchdog/triggers/%trigger/edit'] = array(
+    'title' => 'Edit watchdog trigger',
+    'description' => t('Edit watchdog trigger'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_monitor_watchdog_triggers_form', 5),
+    'file' => 'houston_monitor_watchdog.admin.inc',
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/watchdog/triggers'] = array(
+    'title' => 'Watchdog triggers',
+    'description' => t('List of watchdog triggers'),
+    'page callback' => 'houston_monitor_watchdog_triggers_list',
+    'file' => 'houston_monitor_watchdog.admin.inc',
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_LOCAL_TASK
+  );
+
+  $items['admin/houston/monitor/watchdog/settings'] = array(
+    'title' => 'Watchdog settings',
+    'description' => t('Watchdog triggers'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('houston_monitor_watchdog_settings_form'),
+    'file' => 'houston_monitor_watchdog.admin.inc',
+    'access arguments' => array('administer monitor watchdog'),
+    'type' => MENU_LOCAL_TASK
+  );
+
+  return $items;
+}
+
+function trigger_load($tid) {
+  return db_fetch_object(db_query("SELECT * FROM {houston_monitor_watchdog_triggers} WHERE tid = %d", $tid));
+}
+
+function houston_monitor_watchdog_perm() {
+  return array('administer monitor watchdog', 'view monitor watchdog');
+}
+
+function houston_monitor_watchdog_ping_method(&$methods) {
+  $methods[] = array(
+    'title' => t('watchdog'),
+    'url' => 'admin/houston/monitor/watchdog/%webapp/ping',
+  );
+
+  return $methods;
+}
+
+function houston_monitor_watchdog_theme() {
+  return array(
+    'houston_monitor_watchdog_webapp_triggers_fields' => array(
+      'arguments' => array('form' => NULL),
+      'file' => 'houston_monitor_watchdog.theme.inc'
+    ),
+  );
+}
+
+function houston_monitor_watchdog_mail($key, &$message, $params) {
+  $message['subject'] = 'Houston, we have a problem!';
+  $message['message'] = print_r($params, TRUE);
+}
+
+function _houston_monitor_watchdog_fetch_triggers($amount_1 = FALSE) {
+  $nid = 1;
+  $extra_where = $amount_1 === TRUE ? 'AND t.amount = 1' : 'AND t.amount > 1';
+
+  $sql = "SELECT t.tid, t.amount, t.severity, t.type, t.period
+          FROM {houston_monitor_watchdog_triggers} t
+          WHERE t.nid = %s $extra_where";
+
+  $result = db_query($sql, $nid);
+
+  while ($trigger = db_fetch_object($result)) {
+    $triggers[] = $trigger;
+  }
+
+  return $triggers;
+}
+
+function houston_monitor_watchdog_fire_trigger($barks) {
+  $message = array(
+    'id' => 'houston_watchdog_trigger',
+    'to' => 'jasper.knops@nascom.be',
+    'subject' => 'Houston, we have a problem!',
+    'body' => print_r($barks, TRUE),
+  );
+
+  drupal_mail_send($message);
+}
+
+/*function houston_monitor_watchdog_ping_($data) {
+  $barks = array();
+  $nid = 1;
+
+  // Get triggers
+  $triggers = _houston_monitor_watchdog_fetch_triggers(TRUE);
+
+  if (is_array($data['watchdog']) && count($data['watchdog']) > 0) {
+    foreach($data['watchdog'] as $log){
+      foreach ($log as $k => $l) {
+        $watchdog_record->$k = $l;
+      }
+
+      // Check triggers
+      if (is_array($triggers) && count($triggers) > 0) {
+        foreach ($triggers as $trigger) {
+          if (($trigger->severity === '0' && $trigger->type == $watchdog_record->type) ||
+          ($trigger->type === '' && $trigger->severity == $watchdog_record->severity) ||
+          ($trigger->severity == $watchdog_record->severity && $trigger->type == $watchdog_record->type)) {
+            $barks[$trigger->tid]['trigger'] = $trigger;
+            $barks[$trigger->tid]['count'] = $barks[$trigger->tid]['count']++;
+          }
+        }
+      }
+
+      $watchdog_record->nid = $nid;
+      drupal_write_record('houston_monitor_watchdog', $watchdog_record);
+    }
+  }
+
+  // Get triggers
+  $triggers = _houston_monitor_watchdog_fetch_triggers();
+
+  if (is_array($triggers) && count($triggers) > 0) {
+    foreach ($triggers as $trigger) {
+
+      if ($trigger->severity > 0) {
+        $extra_where = "AND w.severity = %d";
+      }
+
+      if ($trigger->type != '') {
+        $extra_where .= " AND w.type = '%s'";
+      }
+
+      $sql = "SELECT COUNT(*) AS count
+      FROM {houston_monitor_watchdog} w
+      LEFT JOIN {houston_monitor_watchdog_triggered} t ON t.mid = w.mid
+      WHERE t.tid IS NULL AND w.timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL %d MINUTE) AND w.nid = %d
+      $extra_where";
+
+      if ($trigger->severity > 0 && $trigger->type != '') {
+        $count = db_result(db_query($sql, $trigger->period, $nid, $trigger->severity, $trigger->type));
+      }
+      elseif ($trigger->severity > 0) {
+        $count = db_result(db_query($sql, $trigger->period, $nid, $trigger->severity));
+      }
+      else {
+        $count = db_result(db_query($sql, $trigger->period, $nid, $trigger->type));
+      }
+
+      if ($count >= $trigger->amount) {
+        $sql = "INSERT INTO {houston_monitor_watchdog_triggered} (mid, tid)
+        SELECT w.mid, '%d' as tid
+        FROM {houston_monitor_watchdog} w
+        LEFT JOIN {houston_monitor_watchdog_triggered} t ON t.mid = w.mid
+        WHERE t.tid IS NULL AND w.timestamp > UNIX_TIMESTAMP(NOW() - INTERVAL %d MINUTE) AND w.nid = %d
+        $extra_where";
+
+        if ($trigger->severity > 0 && $trigger->type != '') {
+          $result = db_query($sql, $trigger->tid, $trigger->period, $nid, $trigger->severity, $trigger->type);
+        }
+        elseif ($trigger->severity > 0) {
+          $result = db_query($sql, $trigger->tid, $trigger->period, $nid, $trigger->severity);
+        }
+        else {
+          $result = db_query($sql, $trigger->tid, $trigger->period, $nid, $trigger->type);
+        }
+
+        $barks[$trigger->tid]['trigger'] = $trigger;
+        $barks[$trigger->tid]['count'] = $barks[$trigger->tid]['count']++;
+      }
+    }
+  }
+
+  $status = $data['running'] === TRUE ? 1 : 2;
+
+  houston_monitor_watchdog_fire_trigger($barks);
+  houston_ping_log($nid, 'watchdog', $status, $data['pid']);
+}*/
+
+function houston_monitor_watchdog_ping($webapp, $last_wid = FALSE, $count_exec = FALSE) {
+  $batch_size = variable_get('houston_monitor_watchdog_batch_size', 100);
+  $max_exec = variable_get('houston_monitor_watchdog_max_exec', 100);
+
+  if ($count_exec && $count_exec >= $max_exec) {
+    return FALSE;
+  }
+
+  if ($last_wid == FALSE) {
+    // Get last fetched wid
+    $sql = "SELECT w.wid FROM {houston_monitor_watchdog} w WHERE w.nid = %d ORDER BY w.wid DESC LIMIT 1";
+    $wid = db_result(db_query($sql, $webapp->nid));
+    $last_wid = $wid > 0 ? $wid : 0;
+  }
+
+  $params = array('last_wid' => $last_wid, 'batch_size' => $batch_size);
+
+  // Ping module
+  $result = houston_ping_ping($webapp->nid, 'houston_connect.ping_watchdog', $params);
+  $count_exec = intval($count_exec) + 1;
+
+  // Save watchdog
+  if (is_array($result['watchdog']) && count($result['watchdog']) > 0) {
+    foreach ($result['watchdog'] as $log) {
+      foreach ($log as $k => $l) {
+        $watchdog_record->$k = $l;
+      }
+      $watchdog_record->nid = $webapp->nid;
+      drupal_write_record('houston_monitor_watchdog', $watchdog_record);
+      $last_wid = $watchdog_record->wid;
+    }
+  }
+
+  // Fetch more
+  if ($result['running'] == TRUE) {
+    houston_monitor_watchdog_ping($webapp, $last_wid, $count_exec);
+  }
+
+  drupal_set_message(t('The watchdog was fetched successfully for <em>%webapp</em>. !url', array('%webapp' => $webapp->title, '!url' => l('Check it out!', 'node/'. $webapp->nid .'/watchdog'))));
+  drupal_goto('admin/houston/ping/webapps');
+}
+
+function houston_monitor_watchdog_cron() {
+  $result = db_query("SELECT * FROM {houston_ping_webapp} WHERE active = '1'");
+
+  while ($row = db_fetch_object($result)) {
+    $webapp->nid = $row->wid;
+    houston_monitor_watchdog_ping($webapp);
+  }
+}

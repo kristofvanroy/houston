@@ -1,0 +1,171 @@
+<?php
+/*
+ * @TODO:
+ * Finish up: Enable and disable hooks
+ */
+
+/**
+ * Implementation of hook_install().
+ */
+function houston_monitor_modules_install() {
+  drupal_install_schema('houston_monitor_modules');
+}
+
+/**
+ * Implementation of hook_uninstall().
+ */
+function houston_monitor_modules_uninstall() {
+  drupal_uninstall_schema('houston_monitor_modules');
+}
+
+/**
+ * Implementation of hook_enable().
+ */
+function houston_monitor_modules_enable() {
+// @TODO
+}
+
+/**
+ * Implementation of hook_disable().
+ */
+function houston_monitor_modules_disable() {
+// @TODO
+}
+
+/**
+ * Implementation of hook_schema().
+ */
+function houston_monitor_modules_schema() {
+  $schema = array();
+
+  $schema['houston_monitor_modules'] = array(
+    'description' => t('Holds the module info per project'),
+    'fields' => array(
+      'mid' => array(
+        'description' => t('Module info'),
+        'type' => 'serial',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'nid' => array(
+        'description' => t('Node identifier'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'not null' => TRUE,
+      ),
+      'name' => array(
+        'description' => t('Module name machine readable'),
+        'type' => 'varchar',
+        'length' => '70',
+        'not null' => TRUE,
+      ),
+      'title' => array(
+        'description' => t('Module title human readable'),
+        'type' => 'varchar',
+        'length' => '70',
+        'not null' => TRUE,
+      ),
+      'description' => array(
+        'description' => t('Module description'),
+        'type' => 'varchar',
+        'length' => '350',
+        'not null' => TRUE,
+      ),
+      'project_type' => array(
+        'description' => t('Type: Core/Module'),
+        'type' => 'varchar',
+        'length' => '15',
+        'not null' => TRUE,
+      ),
+      'installed_version' => array(
+        'description' => t('Installed version'),
+        'type' => 'varchar',
+        'length' => '15',
+        'not null' => TRUE,
+      ),
+      'latest_version' => array(
+        'description' => t('Latest version available'),
+        'type' => 'varchar',
+        'length' => '15',
+        'not null' => TRUE,
+      ),
+      'recommended_version' => array(
+        'description' => t('Recommended version number'),
+        'type' => 'varchar',
+        'length' => '15',
+        'not null' => TRUE,
+      ),
+      'download_link' => array(
+        'description' => t('Download link of latest version'),
+        'type' => 'varchar',
+        'length' => '250',
+        'not null' => TRUE,
+      ),
+      'project_link' => array(
+        'description' => t('Link to the project page'),
+        'type' => 'varchar',
+        'length' => '250',
+        'not null' => TRUE,
+      ),
+      'package' => array(
+        'description' => t('Package for grouping'),
+        'type' => 'varchar',
+        'length' => '45',
+        'not null' => TRUE,
+      ),
+      'status' => array(
+        'description' => t('Status code of the module 0 = out of date / 1 = up to date'),
+        'type' => 'int',
+        'unsigned' => TRUE,
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+    ),
+    'primary key' => array('mid'),
+  );
+
+  $schema['houston_monitor_modules_webapp'] = array(
+  'description' => t('TODO: please describe this table!'),
+  'fields' => array(
+    'id' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'serial',
+      'unsigned' => TRUE,
+      'not null' => TRUE,
+    ),
+    'wid' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'not null' => TRUE,
+    ),
+    'mid' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'not null' => TRUE,
+    ),
+    'installed_version' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'varchar',
+      'length' => '15',
+      'not null' => TRUE,
+    ),
+    'status' => array(
+      'description' => t('TODO: please describe this field!'),
+      'type' => 'int',
+      'unsigned' => TRUE,
+      'size' => 'tiny',
+      'not null' => TRUE,
+      'default' => 0,
+    ),
+  ),
+  'primary key' => array('id'),
+  'unique keys' => array(
+    'idx_wid_mid' => array('wid', 'mid')
+  ),
+);
+
+  return $schema;
+}

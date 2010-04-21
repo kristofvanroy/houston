@@ -1,0 +1,24 @@
+#block-houston_subversion-svn_info ul {
+	margin-top: 8px;
+}
+
+#block-houston_subversion-svn_info .username {
+	color: #666;
+	font-size: 10px;
+	text-transform: uppercase;
+	vertical-align: baseline;
+	padding: 3px;
+	background: #fff;
+	display: inline;
+}
+
+#block-houston_subversion-svn_info .revisionstamp {
+	color: #666;
+	font-size: 11px;
+}
+
+#block-houston_subversion-svn_info .commit-message {
+	color: #333;
+	font-style: italic;
+	font-size: 11px;
+}
